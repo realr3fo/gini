@@ -91,7 +91,7 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 	var propertiesArr []string
 
 	properties, propertyOk := r.URL.Query()["properties"]
-	if propertyOk {
+	if propertyOk && properties[0] != ""{
 		unbounded = false
 		propertiesArr = strings.Split(properties[0], ",")
 	}
@@ -137,7 +137,6 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 			}
 			strCount := result.Result.Bindings[0].PropertyCountBinding.Value
 			intCount, _ := strconv.Atoi(strCount)
-			fmt.Println(intCount)
 			propertyCountData = append(propertyCountData, intCount)
 		}
 		sort.Ints(propertyCountData)
