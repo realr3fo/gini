@@ -4,94 +4,76 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
-	"io/ioutil"
+	"math"
 	"net/http"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 )
 
-type event struct {
-	ID          string `json:"ID"`
-	Title       string `json:"Title"`
-	Description string `json:"Description"`
-}
-
 type giniData struct {
-	Gini float64 `json:"gini"`
-	Data []int `json:"data"`
+	Gini float64   `json:"gini"`
+	Data []float64 `json:"data"`
 }
 
-type allEvents []event
+type HeadVar struct {
+	Var []string `json:"vars"`
+}
 
-var events = allEvents{
-	{
-		ID:          "1",
-		Title:       "Introduction to Golang",
-		Description: "Come join us for a chance to learn how golang works and get to eventually try it out",
-	},
+type ItemBindingContent struct {
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+type Item struct {
+	ItemBinding ItemBindingContent `json:"item"`
+}
+
+type ResultVar struct {
+	Bindings []Item `json:"bindings"`
+}
+
+type InstancesResult struct {
+	Head   HeadVar   `json:"head"`
+	Result ResultVar `json:"results"`
+}
+
+type PropertyCountBindingContent struct {
+	DataType string `json:"datatype"`
+	Type     string `json:"type"`
+	Value    string `json:"value"`
+}
+
+type PropertyCount struct {
+	PropertyCountBinding PropertyCountBindingContent `json:"propertyCount"`
+}
+
+type CountResultVar struct {
+	Bindings []PropertyCount `json:"bindings"`
+}
+
+type CountResult struct {
+	Head   HeadVar        `json:"head"`
+	Result CountResultVar `json:"results"`
 }
 
 func homeLink(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Welcome home!")
 }
 
-func createEvent(w http.ResponseWriter, r *http.Request) {
-	var newEvent event
-	reqBody, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		fmt.Fprintf(w, "Kindly enter data with the event title and description only in order to update")
-	}
-
-	json.Unmarshal(reqBody, &newEvent)
-	events = append(events, newEvent)
-	w.WriteHeader(http.StatusCreated)
-
-	json.NewEncoder(w).Encode(newEvent)
-}
-
-func getOneEvent(w http.ResponseWriter, r *http.Request) {
-	eventID := mux.Vars(r)["id"]
-
-	for _, singleEvent := range events {
-		if singleEvent.ID == eventID {
-			json.NewEncoder(w).Encode(singleEvent)
+func findMinAndMax(a []int) (min int, max int) {
+	min = a[0]
+	max = a[0]
+	for _, value := range a {
+		if value < min {
+			min = value
+		}
+		if value > max {
+			max = value
 		}
 	}
-}
-
-func getAllEvents(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(events)
-}
-
-func updateEvent(w http.ResponseWriter, r *http.Request) {
-	eventID := mux.Vars(r)["id"]
-	var updatedEvent event
-
-	reqBody, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		fmt.Fprintf(w, "Kindly enter data with the event title and description only in order to update")
-	}
-	json.Unmarshal(reqBody, &updatedEvent)
-
-	for i, singleEvent := range events {
-		if singleEvent.ID == eventID {
-			singleEvent.Title = updatedEvent.Title
-			singleEvent.Description = updatedEvent.Description
-			events = append(events[:i], singleEvent)
-			json.NewEncoder(w).Encode(singleEvent)
-		}
-	}
-}
-
-func deleteEvent(w http.ResponseWriter, r *http.Request) {
-	eventID := mux.Vars(r)["id"]
-
-	for i, singleEvent := range events {
-		if singleEvent.ID == eventID {
-			events = append(events[:i], events[i+1:]...)
-			fmt.Fprintf(w, "The event with ID %v has been deleted successfully", eventID)
-		}
-	}
+	return min, max
 }
 
 func getGini(w http.ResponseWriter, r *http.Request) {
@@ -113,25 +95,111 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 		unbounded = false
 		propertiesArr = strings.Split(properties[0], ",")
 	}
-	fmt.Println(unbounded)
-	fmt.Println(propertiesArr)
 
-	if entity == "Q5" {
-		giniArrData := []int{286,641,1078,1527,1981,2530,3325,4236,5163,6248}
-		giniCoefficient := 0.23524
+	if unbounded {
+		wikiDataQueryURL := fmt.Sprintf("https://query.wikidata.org/sparql?query=select%%3Fitem%%7B%%3Fitem%%20wdt%%3AP31%%20wd%%3A%s%%7D&format=json", entity)
+		response, err := http.Get(wikiDataQueryURL)
+		if err != nil {
+			http.Error(w, "Error while query WikiData", http.StatusInternalServerError)
+			return
+		}
+		decoder := json.NewDecoder(response.Body)
+		var result InstancesResult
+		err = decoder.Decode(&result)
+		if err != nil {
+			http.Error(w, "Error while decoding", http.StatusInternalServerError)
+			return
+		}
+		var resultEntities []string
+		for _, elem := range result.Result.Bindings {
+			splitElem := strings.Split(elem.ItemBinding.Value, "/")
+			entityID := splitElem[len(splitElem)-1]
+			resultEntities = append(resultEntities, entityID)
+		}
+
+		var propertyCountData []int
+		for _, elem := range resultEntities {
+			wikiDataCountURL := fmt.Sprintf("https://query.wikidata.org/sparql?query=SELECT%%20(COUNT("+
+				"DISTINCT(%%3Fp))%%20AS%%20%%3FpropertyCount)%%20%%7Bwd%%3A%s%%20%%3Fp%%20%%3Fo%%20.%%20FILTER("+
+				"STRSTARTS(STR(%%3Fp)%%2C%%22http%%3A%%2F%%2Fwww.wikidata.org%%2Fprop%%2Fdirect%%2F%%22))"+
+				"%%7D&format=json", elem)
+			countResponse, err := http.Get(wikiDataCountURL)
+			if err != nil {
+				http.Error(w, "Error while query count WikiData", http.StatusInternalServerError)
+				return
+			}
+			decoder := json.NewDecoder(countResponse.Body)
+			var result CountResult
+			err = decoder.Decode(&result)
+			if err != nil {
+				http.Error(w, "Error while decoding", http.StatusInternalServerError)
+				return
+			}
+			strCount := result.Result.Bindings[0].PropertyCountBinding.Value
+			intCount, _ := strconv.Atoi(strCount)
+			fmt.Println(intCount)
+			propertyCountData = append(propertyCountData, intCount)
+		}
+		sort.Ints(propertyCountData)
+		n := len(propertyCountData)
+
+		sum := 0
+		for _, elem := range propertyCountData {
+			sum += elem
+		}
+
+		calculateTopSum := 0
+		for idx, elem := range propertyCountData {
+			calculateTopSum += (n + 1 - (idx + 1)) * elem
+		}
+
+		rightBelowGiniCoef := n * sum
+		rightTopGiniCoef := 2 * calculateTopSum
+		rightGiniCoef := float64(rightTopGiniCoef) / float64(rightBelowGiniCoef)
+		leftGiniCoef := float64(n+1) / float64(n)
+		giniCoef := leftGiniCoef - rightGiniCoef
+		chunkSize := float64(n) / float64(10)
+		chunkSize = math.Ceil(chunkSize)
+
+
+		var chunkedArray []int
+		cumSum := 0
+		if chunkSize > 1 {
+			for idx, elem := range propertyCountData {
+				if idx != len(propertyCountData)-1 && math.Mod(float64(idx+1), chunkSize) == 0 {
+					chunkedArray = append(chunkedArray, cumSum)
+				}
+				cumSum += elem
+				if idx == len(propertyCountData)-1 {
+					chunkedArray = append(chunkedArray, cumSum)
+				}
+			}
+		} else {
+			for _, elem := range propertyCountData {
+				cumSum += elem
+				chunkedArray = append(chunkedArray, cumSum)
+			}
+		}
+
+		var normalizedCountData []float64
+		min, max := findMinAndMax(chunkedArray)
+		for _, elem := range chunkedArray {
+			normalizedElem := (float64(elem) - float64(min)) / (float64(max) - float64(min))
+			normalizedCountData = append(normalizedCountData, normalizedElem)
+		}
+
+
+		giniArrData := normalizedCountData
+		giniCoefficient := giniCoef
 		giniResp := &giniData{
 			Gini: giniCoefficient,
 			Data: giniArrData,
 		}
 		json.NewEncoder(w).Encode(giniResp)
 	} else {
-		giniArrData := []int{100,300,600,1000,1500,2100,2800,3600,4500,5500}
-		giniCoefficient := 0.12345
-		giniResp := &giniData{
-			Gini: giniCoefficient,
-			Data: giniArrData,
-		}
-		json.NewEncoder(w).Encode(giniResp)
+		//propertyNum := len(properties)
+		fmt.Println(len(propertiesArr))
+
 	}
 }
 
@@ -139,11 +207,6 @@ func main() {
 	//initEvents()
 	router := mux.NewRouter().StrictSlash(true)
 	router.HandleFunc("/", homeLink)
-	router.HandleFunc("/event", createEvent).Methods("POST")
-	router.HandleFunc("/events", getAllEvents).Methods("GET")
-	router.HandleFunc("/events/{id}", getOneEvent).Methods("GET")
-	router.HandleFunc("/events/{id}", updateEvent).Methods("PUT")
-	router.HandleFunc("/events/{id}", deleteEvent).Methods("DELETE")
 
 	router.HandleFunc("/api/gini", getGini).Methods("GET")
 	port := os.Getenv("PORT")
