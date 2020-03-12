@@ -95,6 +95,8 @@ func deleteEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func getGini(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	giniArrData := []int{286,641,1078,1527,1981,2530,3325,4236,5163,6248}
 	giniCoefficient := 0.23524
 	giniResp := &giniData{
