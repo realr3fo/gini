@@ -3,11 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/gorilla/mux"
 	"io/ioutil"
 	"net/http"
 	"os"
-
-	"github.com/gorilla/mux"
+	"strings"
 )
 
 type event struct {
@@ -97,13 +97,42 @@ func deleteEvent(w http.ResponseWriter, r *http.Request) {
 func getGini(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	giniArrData := []int{286,641,1078,1527,1981,2530,3325,4236,5163,6248}
-	giniCoefficient := 0.23524
-	giniResp := &giniData{
-		Gini: giniCoefficient,
-		Data: giniArrData,
+
+	entities, entityOk := r.URL.Query()["entity"]
+	if !entityOk {
+		http.Error(w, "Url Param 'entity' is missing", http.StatusInternalServerError)
+		return
 	}
-	json.NewEncoder(w).Encode(giniResp)
+	entity := entities[0]
+
+	var unbounded = true
+	var propertiesArr []string
+
+	properties, propertyOk := r.URL.Query()["properties"]
+	if propertyOk {
+		unbounded = false
+		propertiesArr = strings.Split(properties[0], ",")
+	}
+	fmt.Println(unbounded)
+	fmt.Println(propertiesArr)
+
+	if entity == "Q5" {
+		giniArrData := []int{286,641,1078,1527,1981,2530,3325,4236,5163,6248}
+		giniCoefficient := 0.23524
+		giniResp := &giniData{
+			Gini: giniCoefficient,
+			Data: giniArrData,
+		}
+		json.NewEncoder(w).Encode(giniResp)
+	} else {
+		giniArrData := []int{100,300,600,1000,1500,2100,2800,3600,4500,5500}
+		giniCoefficient := 0.12345
+		giniResp := &giniData{
+			Gini: giniCoefficient,
+			Data: giniArrData,
+		}
+		json.NewEncoder(w).Encode(giniResp)
+	}
 }
 
 func main() {
