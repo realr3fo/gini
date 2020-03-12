@@ -1,0 +1,12 @@
+{
+	"ImportPath": "gini",
+	"GoVersion": "go1.13",
+	"GodepVersion": "v80",
+	"Deps": [
+		{
+			"ImportPath": "github.com/gorilla/mux",
+			"Comment": "v1.7.4",
+			"Rev": "75dcda0896e109a2a22c9315bca3bb21b87b2ba5"
+		}
+	]
+}
