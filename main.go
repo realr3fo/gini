@@ -97,6 +97,7 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if unbounded {
+		print("debug")
 		wikiDataQueryURL := fmt.Sprintf("https://query.wikidata.org/sparql?query=select%%3Fitem%%7B%%3Fitem%%20wdt%%3AP31%%20wd%%3A%s%%7D&format=json", entity)
 		response, err := http.Get(wikiDataQueryURL)
 		if err != nil {
@@ -197,7 +198,7 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(giniResp)
 	} else {
 		//propertyNum := len(properties)
-		fmt.Println(len(propertiesArr))
+		fmt.Println(propertiesArr)
 
 	}
 }
