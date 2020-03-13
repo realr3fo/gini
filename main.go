@@ -63,6 +63,9 @@ func homeLink(w http.ResponseWriter, r *http.Request) {
 }
 
 func findMinAndMax(a []int) (min int, max int) {
+	if len(a) == 0 {
+		return 0, 0
+	}
 	min = a[0]
 	max = a[0]
 	for _, value := range a {
@@ -76,6 +79,28 @@ func findMinAndMax(a []int) (min int, max int) {
 	return min, max
 }
 
+func allCombination(set []string) (subsets [][]string) {
+	length := uint(len(set))
+
+	// Go through all possible combinations of objects
+	// from 1 (only first object in subset) to 2^length (all objects in subset)
+	for subsetBits := 1; subsetBits < (1 << length); subsetBits++ {
+		var subset []string
+
+		for object := uint(0); object < length; object++ {
+			// checks if object is contained in subset
+			// by checking if bit 'object' is set in subsetBits
+			if (subsetBits>>object)&1 == 1 {
+				// add object to subset
+				subset = append(subset, set[object])
+			}
+		}
+		// add subset to subsets
+		subsets = append(subsets, subset)
+	}
+	return subsets
+}
+
 func getGini(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -86,6 +111,10 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entity := entities[0]
+	if entity == "Q5" {
+		http.Error(w, "Don't input Q5", http.StatusInternalServerError)
+		return
+	}
 
 	var unbounded = true
 	var propertiesArr []string
@@ -93,7 +122,8 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 	properties, propertyOk := r.URL.Query()["properties"]
 	if propertyOk && properties[0] != "[]"  && len(properties[0]) != 0 {
 		unbounded = false
-		propertiesArr = strings.Split(properties[0], ",")
+		trimmedString := strings.Trim(properties[0], "[]")
+		propertiesArr = strings.Split(trimmedString, ",")
 	}
 
 	if unbounded {
@@ -122,7 +152,7 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 			wikiDataCountURL := fmt.Sprintf("https://query.wikidata.org/sparql?query=SELECT%%20(COUNT("+
 				"DISTINCT(%%3Fp))%%20AS%%20%%3FpropertyCount)%%20%%7Bwd%%3A%s%%20%%3Fp%%20%%3Fo%%20.%%20FILTER("+
 				"STRSTARTS(STR(%%3Fp)%%2C%%22http%%3A%%2F%%2Fwww.wikidata.org%%2Fprop%%2Fdirect%%2F%%22))"+
-				"%%7D&format=json", elem)
+				"%%7DLIMIT%%20500&format=json", elem)
 			countResponse, err := http.Get(wikiDataCountURL)
 			if err != nil {
 				http.Error(w, "Error while query count WikiData", http.StatusInternalServerError)
@@ -196,11 +226,56 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 		}
 		json.NewEncoder(w).Encode(giniResp)
 	} else {
-		//propertyNum := len(properties)
-		fmt.Println(propertiesArr[0] == "")
-		fmt.Println(len(propertiesArr[0]))
-		fmt.Println(propertiesArr[0]  )
+		propLength := len(propertiesArr)
+		//var entitySet []map[string]int
 
+		setComb := map[int][][]string{}
+		combRes := allCombination(propertiesArr)
+		for _, elem := range combRes {
+			currLen := len(elem)
+			_, ok := setComb[currLen]
+			if ok {
+				setComb[currLen] = append(setComb[currLen], elem)
+			} else {
+				setComb[currLen] = [][]string{elem}
+			}
+		}
+
+		for propNum := propLength; propNum >= 0; propNum-- {
+			arrCombs := setComb[propNum]
+			strElem := fmt.Sprintf("https://query.wikidata.org/sparql?query=select%%20DISTINCT%%20%%3Fitem%%20%%7B%%7B%%3Fitem%%20wdt%%3AP31%%20wd%%3A%s%%3B%%7D", entity)
+			for _, elem := range arrCombs {
+				strElem += fmt.Sprintf("%%20UNION%%20")
+				num := 0
+				for _, insideElem := range elem {
+					strElem += fmt.Sprintf("%%7B%%3Fitem%%20wdt%%3A%s%%20%%3F%d%%7D", insideElem, num)
+					num += 1
+				}
+			}
+
+			strElem += fmt.Sprintf("%%7D&format=json")
+			fmt.Println(strElem)
+			response, err := http.Get(strElem)
+			if err != nil {
+				http.Error(w, "Error while query WikiData", http.StatusInternalServerError)
+				return
+			}
+			decoder := json.NewDecoder(response.Body)
+			var result InstancesResult
+			err = decoder.Decode(&result)
+			if err != nil {
+				http.Error(w, "Error while decoding", http.StatusInternalServerError)
+				return
+			}
+			var resultEntities []string
+			for _, elem := range result.Result.Bindings {
+				splitElem := strings.Split(elem.ItemBinding.Value, "/")
+				entityID := splitElem[len(splitElem)-1]
+				resultEntities = append(resultEntities, entityID)
+			}
+
+
+		}
 	}
 }
 
