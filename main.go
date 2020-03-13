@@ -148,7 +148,7 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 			wikiDataCountURL := fmt.Sprintf("https://query.wikidata.org/sparql?query=SELECT%%20(COUNT("+
 				"DISTINCT(%%3Fp))%%20AS%%20%%3FpropertyCount)%%20%%7Bwd%%3A%s%%20%%3Fp%%20%%3Fo%%20.%%20FILTER("+
 				"STRSTARTS(STR(%%3Fp)%%2C%%22http%%3A%%2F%%2Fwww.wikidata.org%%2Fprop%%2Fdirect%%2F%%22))"+
-				"%%7DLIMIT%%20500&format=json", elem)
+				"%%7DLIMIT%%20300&format=json", elem)
 			countResponse, err := http.Get(wikiDataCountURL)
 			if err != nil {
 				http.Error(w, "Error while query count WikiData", http.StatusInternalServerError)
