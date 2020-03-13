@@ -111,10 +111,6 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entity := entities[0]
-	if entity == "Q5" {
-		http.Error(w, "Don't input Q5", http.StatusInternalServerError)
-		return
-	}
 
 	var unbounded = true
 	var propertiesArr []string
