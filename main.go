@@ -111,6 +111,10 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entity := entities[0]
+	if entity == "Q5" {
+		http.Error(w, "Don't input Q5", http.StatusInternalServerError)
+		return
+	}
 
 	var unbounded = true
 	var propertiesArr []string
@@ -123,7 +127,7 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if unbounded {
-		wikiDataQueryURL := fmt.Sprintf("https://query.wikidata.org/sparql?query=select%%3Fitem%%7B%%3Fitem%%20wdt%%3AP31%%20wd%%3A%s%%7D&format=json", entity)
+		wikiDataQueryURL := fmt.Sprintf("https://query.wikidata.org/sparql?query=select%%3Fitem%%7B%%3Fitem%%20wdt%%3AP31%%20wd%%3A%s%%7DLIMIT%%201000&format=json", entity)
 		response, err := http.Get(wikiDataQueryURL)
 		if err != nil {
 			http.Error(w, "Error while query WikiData", http.StatusInternalServerError)
@@ -148,7 +152,7 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 			wikiDataCountURL := fmt.Sprintf("https://query.wikidata.org/sparql?query=SELECT%%20(COUNT("+
 				"DISTINCT(%%3Fp))%%20AS%%20%%3FpropertyCount)%%20%%7Bwd%%3A%s%%20%%3Fp%%20%%3Fo%%20.%%20FILTER("+
 				"STRSTARTS(STR(%%3Fp)%%2C%%22http%%3A%%2F%%2Fwww.wikidata.org%%2Fprop%%2Fdirect%%2F%%22))"+
-				"%%7DLIMIT%%20300&format=json", elem)
+				"%%7D&format=json", elem)
 			countResponse, err := http.Get(wikiDataCountURL)
 			if err != nil {
 				http.Error(w, "Error while query count WikiData", http.StatusInternalServerError)
