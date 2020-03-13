@@ -15,6 +15,12 @@ import (
 type giniData struct {
 	Gini float64   `json:"gini"`
 	Data []float64 `json:"data"`
+	Entities [][]string `json:"entities"`
+}
+
+type EntityPropCount struct {
+	Entity string `json:"-"`
+	PropCount int `json:"-"`
 }
 
 type HeadVar struct {
@@ -101,6 +107,8 @@ func allCombination(set []string) (subsets [][]string) {
 	return subsets
 }
 
+
+
 func getGini(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -123,7 +131,8 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if unbounded {
-		wikiDataQueryURL := fmt.Sprintf("https://query.wikidata.org/sparql?query=select%%3Fitem%%7B%%3Fitem%%20wdt%%3AP31%%20wd%%3A%s%%7DLIMIT%%201000&format=json", entity)
+		wikiDataQueryURL := fmt.Sprintf("https://query.wikidata.org/sparql?query=select%%3Fitem%%7B%%3Fitem%%20wdt" +
+			"%%3AP31%%20wd%%3A%s%%7DLIMIT%%20500&format=json", entity)
 		response, err := http.Get(wikiDataQueryURL)
 		if err != nil {
 			http.Error(w, "Error while query WikiData", http.StatusInternalServerError)
@@ -143,7 +152,7 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 			resultEntities = append(resultEntities, entityID)
 		}
 
-		var propertyCountData []int
+		var propertyCountData []EntityPropCount
 		for _, elem := range resultEntities {
 			wikiDataCountURL := fmt.Sprintf("https://query.wikidata.org/sparql?query=SELECT%%20(COUNT("+
 				"DISTINCT(%%3Fp))%%20AS%%20%%3FpropertyCount)%%20%%7Bwd%%3A%s%%20%%3Fp%%20%%3Fo%%20.%%20FILTER("+
@@ -163,19 +172,25 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 			}
 			strCount := result.Result.Bindings[0].PropertyCountBinding.Value
 			intCount, _ := strconv.Atoi(strCount)
-			propertyCountData = append(propertyCountData, intCount)
+			elemPropCount := EntityPropCount{
+				Entity:    elem,
+				PropCount: intCount,
+			}
+			propertyCountData = append(propertyCountData, elemPropCount)
 		}
-		sort.Ints(propertyCountData)
+		sort.Slice(propertyCountData, func(i, j int) bool {
+			return propertyCountData[i].PropCount < propertyCountData[j].PropCount
+		})
 		n := len(propertyCountData)
 
 		sum := 0
 		for _, elem := range propertyCountData {
-			sum += elem
+			sum += elem.PropCount
 		}
 
 		calculateTopSum := 0
 		for idx, elem := range propertyCountData {
-			calculateTopSum += (n + 1 - (idx + 1)) * elem
+			calculateTopSum += (n + 1 - (idx + 1)) * elem.PropCount
 		}
 
 		rightBelowGiniCoef := n * sum
@@ -188,20 +203,27 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 
 
 		var chunkedArray []int
+		var groupedEntities [][]string
 		cumSum := 0
 		if chunkSize > 1 {
+			var tmpGroupedEntities []string
 			for idx, elem := range propertyCountData {
-				if idx != len(propertyCountData)-1 && math.Mod(float64(idx+1), chunkSize) == 0 {
+				if idx != 0 && math.Mod(float64(idx), chunkSize) == 0 {
+					groupedEntities = append(groupedEntities, tmpGroupedEntities)
+					tmpGroupedEntities = []string{}
 					chunkedArray = append(chunkedArray, cumSum)
 				}
-				cumSum += elem
+				cumSum += elem.PropCount
+				tmpGroupedEntities = append(tmpGroupedEntities, elem.Entity)
 				if idx == len(propertyCountData)-1 {
 					chunkedArray = append(chunkedArray, cumSum)
+					groupedEntities = append(groupedEntities, tmpGroupedEntities)
 				}
 			}
 		} else {
 			for _, elem := range propertyCountData {
-				cumSum += elem
+				groupedEntities = append(groupedEntities, []string{elem.Entity})
+				cumSum += elem.PropCount
 				chunkedArray = append(chunkedArray, cumSum)
 			}
 		}
@@ -214,11 +236,13 @@ func getGini(w http.ResponseWriter, r *http.Request) {
 		}
 
 
+		entitiesData := groupedEntities
 		giniArrData := normalizedCountData
 		giniCoefficient := giniCoef
 		giniResp := &giniData{
 			Gini: giniCoefficient,
 			Data: giniArrData,
+			Entities: entitiesData,
 		}
 		json.NewEncoder(w).Encode(giniResp)
 	} else {
